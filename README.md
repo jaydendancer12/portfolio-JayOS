@@ -2,6 +2,8 @@
 
 ## _Desktop environment in the browser_
 
+![Demo](Demo.png)
+
 # System
 
 ### File System
