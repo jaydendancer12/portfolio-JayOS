@@ -76,4 +76,4 @@ MIT
 
 ---
 
-> Inspired by and originally built by [DustinBrett](https://github.com/DustinBrett) (daedalOS).
+> Inspired by DustinBrett.
