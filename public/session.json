@@ -1,0 +1,18 @@
+{
+  "iconPositions": {
+    "/Users/Public/Pictures/Creative Work/ArtStation.url": { "gridColumnStart": 1, "gridRowStart": 1 },
+    "/Users/Public/Pictures/Creative Work/CodePen.url": { "gridColumnStart": 2, "gridRowStart": 1 },
+    "/Users/Public/Desktop/Browser.url": { "gridColumnStart": 1, "gridRowStart": 1 },
+    "/Users/Public/Desktop/Public.url": { "gridColumnStart": 2, "gridRowStart": 1 },
+    "/Users/Public/Desktop/Github.url": { "gridColumnStart": 3, "gridRowStart": 1 },
+    "/Users/Public/Desktop/Freelance Resume.url": { "gridColumnStart": 1, "gridRowStart": 2 },
+    "/Users/Public/Desktop/Software Engineer Resume.url": { "gridColumnStart": 2, "gridRowStart": 2 },
+    "/Users/Public/Desktop/Portfolio.url": { "gridColumnStart": 3, "gridRowStart": 2 },
+    "/Users/Public/Desktop/Blogs.url": { "gridColumnStart": 1, "gridRowStart": 3 },
+    "/Users/Public/Desktop/Creative Work.url": { "gridColumnStart": 2, "gridRowStart": 3 },
+    "/Users/Public/Desktop/Goodreads.url": { "gridColumnStart": 3, "gridRowStart": 3 },
+    "/Users/Public/Desktop/Chess.url": { "gridColumnStart": 1, "gridRowStart": 4 },
+    "/Users/Public/Desktop/ClassiCube.url": { "gridColumnStart": 2, "gridRowStart": 4 },
+    "/Users/Public/Desktop/Quake3.url": { "gridColumnStart": 3, "gridRowStart": 4 }
+  }
+}

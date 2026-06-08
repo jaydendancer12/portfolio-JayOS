@@ -1,0 +1,457 @@
+import { basename, extname } from "path";
+import { useTheme } from "styled-components";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { m as motion } from "motion/react";
+import dynamic from "next/dynamic";
+import { Search as SearchIcon } from "components/apps/FileExplorer/NavigationIcons";
+import { Games } from "components/system/Taskbar/Search/Icons";
+import StyledFiles from "components/system/Taskbar/Search/StyledFiles";
+import StyledResults from "components/system/Taskbar/Search/StyledResults";
+import StyledSearch from "components/system/Taskbar/Search/StyledSearch";
+import StyledSections from "components/system/Taskbar/Search/StyledSections";
+import StyledSuggestions from "components/system/Taskbar/Search/StyledSuggestions";
+import StyledTabs from "components/system/Taskbar/Search/StyledTabs";
+import useSearchInputTransition from "components/system/Taskbar/Search/useSearchInputTransition";
+import {
+  SEARCH_BUTTON_TITLE,
+  maybeCloseTaskbarMenu,
+} from "components/system/Taskbar/functions";
+import useTaskbarItemTransition from "components/system/Taskbar/useTaskbarItemTransition";
+import { CloseIcon } from "components/system/Window/Titlebar/WindowActionIcons";
+import { useProcesses } from "contexts/process";
+import directory from "contexts/process/directory";
+import { type ProcessArguments } from "contexts/process/types";
+import { useSession } from "contexts/session";
+import Button from "styles/common/Button";
+import Icon from "styles/common/Icon";
+import {
+  FOCUSABLE_ELEMENT,
+  IMAGE_FILE_EXTENSIONS,
+  KEYPRESS_DEBOUNCE_MS,
+  MILLISECONDS_IN_SECOND,
+  PREVENT_SCROLL,
+  TRANSITIONS_IN_SECONDS,
+} from "utils/constants";
+import { haltEvent, label } from "utils/functions";
+import { SEARCH_INPUT_PROPS, useSearch } from "utils/search";
+
+type SearchProps = {
+  toggleSearch: (showMenu?: boolean) => void;
+};
+
+const TABS = ["All", "Documents", "Photos"] as const;
+
+const MIN_MULTI_LINE = 550;
+
+export const SINGLE_LINE_HEIGHT_ADDITION = 34;
+
+export type TabName = (typeof TABS)[number];
+
+export const NO_RESULTS = "NO_RESULTS";
+
+const SUGGESTED = ["FileExplorer", "Terminal", "Browser", "Paint", "MonacoEditor"];
+
+const GAMES = ["ClassiCube", "Quake3", "SpaceCadet"];
+
+const toResult = (ref: string): lunr.Index.Result =>
+  ({ matchData: { metadata: {} }, ref, score: 1 }) as lunr.Index.Result;
+
+const PINNED_DOCUMENTS: lunr.Index.Result[] = [
+  "/Users/Public/Documents/Blogs",
+  "/Users/Public/Documents/Blogs/Chess.com Blog.url",
+  "/Users/Public/Documents/Blogs/Medium-Blogs.url",
+  "/Users/Public/Pictures/Creative Work",
+  "/Users/Public/Pictures/Creative Work/ArtStation.url",
+  "/Users/Public/Pictures/Creative Work/CodePen.url",
+  "/Users/Public/Documents/Software Engineer Resume.docx.pdf",
+  "/Users/Public/Documents/Freelance Resume.docx.pdf",
+].map((ref) => toResult(ref));
+
+const PINNED_PHOTOS: lunr.Index.Result[] = [
+  "/Users/Public/Pictures/Creative Work/Greek-mythology-marketing-agency-sketch.jpg",
+  "/Users/Public/Pictures/Creative Work/Hand-sketched-Music-theme2.jpg",
+  "/Users/Public/Pictures/Creative Work/Texas-holdem-mockup.jpg",
+  "/Users/Public/Pictures/Creative Work/ahnd-drawin-mock-music.jpg",
+  "/Users/Public/Pictures/Creative Work/handcrafted-ui-elements-streetfighter-remake.jpg",
+  "/Users/Public/Pictures/Creative Work/handdrawn-random-krita.jpg",
+  "/Users/Public/Pictures/Creative Work/marketing-agency-markup.jpg",
+  "/Users/Public/Pictures/Creative Work/out-of-this-world-markup.jpg",
+  "/Users/Public/Pictures/Creative Work/random-game-project.jpg",
+  "/Users/Public/Pictures/Creative Work/sports-gambling-brainstorm-mock.jpg",
+].map((ref) => toResult(ref));
+
+const Details = dynamic(
+  () => import("components/system/Taskbar/Search/Details")
+);
+const ResultSection = dynamic(
+  () => import("components/system/Taskbar/Search/ResultSection")
+);
+
+const Search: FC<SearchProps> = ({ toggleSearch }) => {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const menuRef = useRef<HTMLElement | null>(null);
+  const { recentFiles, updateRecentFiles } = useSession();
+  const [activeTab, setActiveTab] = useState<TabName>("All");
+  const {
+    sizes: { search },
+  } = useTheme();
+  const [menuWidth, setMenuWidth] = useState(MIN_MULTI_LINE);
+  const singleLineView = menuWidth < MIN_MULTI_LINE;
+  const searchTransition = useTaskbarItemTransition(
+    search.maxHeight + (singleLineView ? SINGLE_LINE_HEIGHT_ADDITION : 0),
+    true,
+    0.1,
+    0
+  );
+  const inputTransition = useSearchInputTransition();
+  const [showCaret, setShowCaret] = useState(false);
+  const focusOnRenderCallback = useCallback(
+    (element: HTMLInputElement | null) => {
+      element?.focus(PREVENT_SCROLL);
+      setTimeout(() => setShowCaret(true), 400);
+      inputRef.current = element;
+    },
+    []
+  );
+  const [searchTerm, setSearchTerm] = useState("");
+  const results = useSearch(searchTerm);
+  const [bestMatch, setBestMatch] = useState("");
+  const [activeItem, setActiveItem] = useState("");
+  const { open } = useProcesses();
+  const subResults = useMemo<[string, lunr.Index.Result[]][]>(() => {
+    const docs: lunr.Index.Result[] = [];
+    const photos: lunr.Index.Result[] = [];
+
+    for (const result of results) {
+      const ext = extname(result.ref).toLowerCase();
+
+      if (IMAGE_FILE_EXTENSIONS.has(ext)) {
+        photos.push(result);
+      } else {
+        docs.push(result);
+      }
+    }
+
+    return [
+      ["Documents", docs],
+      ["Photos", photos],
+    ];
+  }, [results]);
+
+  const firstResult = useMemo(
+    () =>
+      activeTab === "All"
+        ? results[0]
+        : Object.fromEntries(subResults)[activeTab]?.[0],
+    [activeTab, results, subResults]
+  );
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const changeTab = useCallback(
+    (tab: TabName) => {
+      if (inputRef.current) {
+        inputRef.current.value = (
+          tab === "All"
+            ? inputRef.current.value
+            : `${tab}: ${inputRef.current.value}`
+        ).replace(`${activeTab}: `, "");
+        listRef.current?.scrollTo(0, 0);
+      }
+
+      setActiveItem("");
+      setActiveTab(tab);
+    },
+    [activeTab]
+  );
+  const openApp = useCallback(
+    (pid: string, args?: ProcessArguments) => {
+      toggleSearch(false);
+      open(pid, args);
+    },
+    [open, toggleSearch]
+  );
+  const searchTimeoutRef = useRef(0);
+
+  useEffect(() => {
+    if (
+      firstResult?.ref &&
+      (!bestMatch || bestMatch !== firstResult?.ref || !activeItem)
+    ) {
+      setBestMatch(firstResult.ref);
+
+      if (menuRef.current && menuRef.current.clientWidth > MIN_MULTI_LINE) {
+        setActiveItem(firstResult.ref);
+      }
+    } else if (!firstResult && activeItem) {
+      setActiveItem("");
+    }
+  }, [activeItem, bestMatch, firstResult]);
+
+  useEffect(() => {
+    const updateMenuWidth = (): void =>
+      setMenuWidth(menuRef.current?.clientWidth || 0);
+
+    updateMenuWidth();
+
+    window.addEventListener("resize", updateMenuWidth);
+
+    return () => window.removeEventListener("resize", updateMenuWidth);
+  }, []);
+
+  return (
+    <StyledSearch
+      ref={menuRef}
+      $singleLine={singleLineView}
+      id="searchMenu"
+      onBlurCapture={(event) =>
+        maybeCloseTaskbarMenu(
+          event,
+          menuRef.current,
+          toggleSearch,
+          inputRef.current,
+          SEARCH_BUTTON_TITLE,
+          true
+        )
+      }
+      onKeyDown={({ key }) => {
+        if (key === "Escape") toggleSearch(false);
+      }}
+      {...searchTransition}
+      {...FOCUSABLE_ELEMENT}
+    >
+      <div>
+        <div className="content" onContextMenu={haltEvent}>
+          <StyledTabs>
+            {TABS.filter(
+              (tab) => !(menuWidth < 260 && tab === "Photos")
+            ).map((tab) => (
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
+              <li
+                key={tab}
+                className={tab === activeTab ? "active" : undefined}
+                onClick={() => changeTab(tab)}
+                {...label(
+                  tab === "All"
+                    ? "Find the most relevant results"
+                    : `Find results in ${tab}`
+                )}
+              >
+                {tab}
+              </li>
+            ))}
+          </StyledTabs>
+          <nav>
+            <Button
+              className="close-button"
+              onClick={() => toggleSearch(false)}
+              {...label("Close Search")}
+            >
+              <CloseIcon />
+            </Button>
+          </nav>
+          {!searchTerm && activeTab === "All" && (
+            <StyledSections
+              $singleLine={singleLineView}
+              className={singleLineView ? "single-line" : undefined}
+            >
+              <section>
+                <figure>
+                  <figcaption>Suggested</figcaption>
+                  <StyledSuggestions>
+                    {SUGGESTED.map((app) => (
+                      // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
+                      <li
+                        key={app}
+                        onClick={() => openApp(app)}
+                        title={directory[app].title}
+                      >
+                        <figure>
+                          <Icon
+                            displaySize={32}
+                            imgSize={32}
+                            src={directory[app].icon}
+                          />
+                          <figcaption>{directory[app].title}</figcaption>
+                        </figure>
+                      </li>
+                    ))}
+                  </StyledSuggestions>
+                </figure>
+              </section>
+              <section>
+                {recentFiles.length > 0 && (
+                  <StyledFiles>
+                    <figcaption>Recent</figcaption>
+                    <ol>
+                      {recentFiles.map(([file, pid, title], index) => (
+                        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
+                        <li
+                          key={`${file}${pid}`}
+                          onClick={() => {
+                            openApp(pid, { url: file });
+                            if (index !== 0) {
+                              setTimeout(
+                                () => updateRecentFiles(file, pid, title),
+                                TRANSITIONS_IN_SECONDS.TASKBAR_ITEM *
+                                  MILLISECONDS_IN_SECOND
+                              );
+                            }
+                          }}
+                        >
+                          <Icon
+                            displaySize={16}
+                            imgSize={16}
+                            src={directory[pid]?.icon}
+                          />
+                          <h2>{title || basename(file, extname(file))}</h2>
+                        </li>
+                      ))}
+                    </ol>
+                  </StyledFiles>
+                )}
+                <figure className="card">
+                  <figcaption>
+                    <Games />
+                    Games for you
+                  </figcaption>
+                  <ol>
+                    {GAMES.filter(
+                      (game) =>
+                        !(menuWidth < 360 && game === "Quake3") &&
+                        !(menuWidth < 260 && game === "SpaceCadet")
+                    ).map(
+                      (game) =>
+                        directory[game] && (
+                          // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
+                          <li
+                            key={game}
+                            onClick={() => openApp(game)}
+                            title={directory[game].title}
+                          >
+                            <Icon
+                              displaySize={56}
+                              imgSize={96}
+                              src={directory[game].icon}
+                            />
+                            <h4>{directory[game].title}</h4>
+                          </li>
+                        )
+                    )}
+                  </ol>
+                </figure>
+              </section>
+            </StyledSections>
+          )}
+          {!searchTerm && activeTab === "Documents" && (
+            <StyledResults>
+              <div ref={listRef} className="list">
+                <ResultSection
+                  activeItem={activeItem}
+                  activeTab={activeTab}
+                  openApp={openApp}
+                  results={PINNED_DOCUMENTS}
+                  searchTerm=""
+                  setActiveItem={setActiveItem}
+                  title={"Documents" as TabName}
+                />
+              </div>
+            </StyledResults>
+          )}
+          {!searchTerm && activeTab === "Photos" && (
+            <StyledResults>
+              <div ref={listRef} className="list">
+                <ResultSection
+                  activeItem={activeItem}
+                  activeTab={activeTab}
+                  openApp={openApp}
+                  results={PINNED_PHOTOS}
+                  searchTerm=""
+                  setActiveItem={setActiveItem}
+                  title={"Photos" as TabName}
+                />
+              </div>
+            </StyledResults>
+          )}
+          {searchTerm && (
+            <StyledResults>
+              {(!singleLineView || !activeItem) && (
+                <div ref={listRef} className="list">
+                  <ResultSection
+                    activeItem={activeItem}
+                    activeTab={activeTab}
+                    openApp={openApp}
+                    results={[firstResult || { ref: NO_RESULTS }]}
+                    searchTerm={searchTerm}
+                    setActiveItem={setActiveItem}
+                    title={"Best match" as TabName}
+                    details
+                  />
+                  {results.length > 1 &&
+                    subResults.map(
+                      ([title, subResult]) =>
+                        (activeTab === "All" || activeTab === title) && (
+                          <ResultSection
+                            key={title}
+                            activeItem={activeItem}
+                            activeTab={activeTab}
+                            changeTab={changeTab}
+                            openApp={openApp}
+                            results={subResult.filter(
+                              (result) => firstResult !== result
+                            )}
+                            searchTerm={searchTerm}
+                            setActiveItem={setActiveItem}
+                            title={title as TabName}
+                          />
+                        )
+                    )}
+                </div>
+              )}
+              {activeItem && firstResult && (
+                <Details
+                  openApp={openApp}
+                  setActiveItem={setActiveItem}
+                  singleLineView={singleLineView}
+                  url={activeItem || firstResult?.ref}
+                />
+              )}
+            </StyledResults>
+          )}
+        </div>
+        <motion.div className="search" {...inputTransition}>
+          <SearchIcon />
+          <input
+            ref={focusOnRenderCallback}
+            onChange={() => {
+              const tabAppend = activeTab === "All" ? "" : `${activeTab}: `;
+              const value = inputRef.current?.value.startsWith(tabAppend)
+                ? inputRef.current?.value.replace(tabAppend, "")
+                : inputRef.current?.value;
+
+              window.clearTimeout(searchTimeoutRef.current);
+              searchTimeoutRef.current = window.setTimeout(
+                () => setSearchTerm(value ?? ""),
+                searchTimeoutRef.current > 0 ? KEYPRESS_DEBOUNCE_MS : 0
+              );
+            }}
+            onKeyDown={({ key }) => {
+              if (key === "Enter" && firstResult?.ref) {
+                const bestMatchElement = menuRef.current?.querySelector(
+                  ".list li:first-child figure"
+                );
+
+                (bestMatchElement as HTMLElement)?.click();
+              }
+            }}
+            placeholder="Type here to search"
+            style={{
+              caretColor: showCaret ? undefined : "transparent",
+            }}
+            {...SEARCH_INPUT_PROPS}
+          />
+        </motion.div>
+      </div>
+    </StyledSearch>
+  );
+};
+
+export default memo(Search);

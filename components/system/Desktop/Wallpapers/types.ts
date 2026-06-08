@@ -1,0 +1,70 @@
+import { type VantaWavesConfig } from "components/system/Desktop/Wallpapers/vantaWaves/types";
+import { type Size } from "components/system/Window/RndWindow/useResizable";
+import type MatrixConfig from "components/system/Desktop/Wallpapers/Matrix/config";
+import { type WallpaperFit } from "contexts/session/types";
+
+declare global {
+  interface Window {
+    DEBUG_DISABLE_WALLPAPER?: boolean;
+    WallpaperDestroy?: () => void;
+  }
+}
+
+export type WallpaperConfig =
+  | Partial<typeof MatrixConfig>
+  | Partial<VantaWavesConfig>;
+
+export type WallpaperFunc = (
+  el: HTMLElement | null,
+  config?: WallpaperConfig,
+  fallback?: () => void
+) => Promise<void> | void;
+
+export type OffscreenRenderProps = {
+  canvas: OffscreenCanvas;
+  clockSize?: Size;
+  config?: VantaWavesConfig;
+  devicePixelRatio: number;
+};
+
+export type WallpaperMenuItem = {
+  hasAlt?: boolean;
+  id: string;
+  name?: string;
+  requiresWebGPU?: boolean;
+};
+
+export type WallpaperMessage = { message: string; type: string };
+
+type WallpaperData = {
+  fallbackBackground: string;
+  newWallpaperFit: WallpaperFit;
+  updateTimeout: number;
+  wallpaperUrl: string;
+};
+
+export type WallpaperHandler = (props: {
+  isAlt: boolean;
+  signal: AbortSignal;
+}) => Promise<WallpaperData> | WallpaperData;
+
+export type ApodResponse = {
+  date: string;
+  hdurl?: string;
+  url?: string;
+};
+
+export type ArtInstituteOfChicagoResponse = {
+  data: { image_id: string }[];
+};
+
+export type MetMuseumSearchResponse = {
+  objectIDs: number[] | null;
+  total: number;
+};
+
+export type MetMuseumObjectResponse = {
+  isPublicDomain: boolean;
+  primaryImage: string;
+  primaryImageSmall: string;
+};
